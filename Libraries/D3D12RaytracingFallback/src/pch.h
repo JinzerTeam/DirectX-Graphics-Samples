@@ -24,17 +24,20 @@
 #include <unordered_map>
 #include <map>
 #include <deque>
+#include <string>
 #include <strsafe.h>
-#include "..\include\d3d12_1.h"
-#include "..\include\d3dx12.h"
+#include "d3d12_1.h"
+#include "d3dx12.h"
 #include "dxc\dxcapi.h"
 #include "dxc\dxcapi.use.h"
+#include "dxc\dxcdxrfallbackcompiler.h"
+#include "dxc\dxcdxrfallbackcompiler.use.h"
 #include "dxc\hlsl\DxilContainer.h"
 #include "Util.h"
 
 #include "FallbackDebug.h"
 
-#include "..\include\D3D12RaytracingFallback.h"
+#include "D3D12RaytracingFallback.h"
 #include "RaytracingCompatibilityDebug.h"
 #include "ComObject.h"
 
@@ -65,7 +68,7 @@
 #include "MortonCodesCalculator.h"
 #include "RearrangeElementsPass.h"
 #include "LoadInstancesPass.h"
-#include "LoadTrianglesPass.h"
+#include "LoadPrimitivesPass.h"
 #include "ConstructHierarchyPass.h"
 #include "ConstructAABBPass.h"
 #include "PostBuildInfoQuery.h"

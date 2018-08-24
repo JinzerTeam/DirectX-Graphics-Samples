@@ -13,7 +13,7 @@
 
 namespace FallbackLayer
 {
-    void CompilePSO(ID3D12Device *pDevice, D3D12_SHADER_BYTECODE shaderByteCode, LPCWSTR pEntrypoint, const StateObjectCollection &stateObjectCollection, ID3D12PipelineState **ppPipelineState)
+    void CompilePSO(ID3D12Device *pDevice, D3D12_SHADER_BYTECODE shaderByteCode, const StateObjectCollection &stateObjectCollection, ID3D12PipelineState **ppPipelineState)
     {
         D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
         psoDesc.CS = CD3DX12_SHADER_BYTECODE(shaderByteCode);
@@ -22,6 +22,32 @@ namespace FallbackLayer
 
         ThrowInternalFailure(pDevice->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(ppPipelineState)));
     }
+
+    UINT64 UberShaderRaytracingProgram::GetShaderStackSize(LPCWSTR pExportName)
+    {
+        auto shaderData = GetShaderData(pExportName);
+        return shaderData ? shaderData->stackSize : 0;
+    }
+
+    UberShaderRaytracingProgram::ShaderData *UberShaderRaytracingProgram::GetShaderData(LPCWSTR pExportName)
+    {
+      if (pExportName)
+      {
+        const auto &shaderData = m_ExportNameToShaderData.find(pExportName);
+        if (shaderData != m_ExportNameToShaderData.end())
+        {
+          return &shaderData->second;
+        }
+      }
+      return nullptr;
+    }
+
+    StateIdentifier UberShaderRaytracingProgram::GetStateIdentfier(LPCWSTR pExportName)
+    {
+        auto shaderData = GetShaderData(pExportName);
+        return shaderData ? shaderData->stateIdentifier.StateId : (StateIdentifier)0u;
+    }
+
 
     UberShaderRaytracingProgram::UberShaderRaytracingProgram(ID3D12Device *pDevice, DxilShaderPatcher &dxilShaderPatcher, const StateObjectCollection &stateObjectCollection) :
         m_DxilShaderPatcher(dxilShaderPatcher)
@@ -34,7 +60,6 @@ namespace FallbackLayer
             numShaders += lib.NumExports;
         }
 
-        std::vector<wchar_t[10]> tempStringStorage(numShaders);
         std::vector<DxilLibraryInfo> librariesInfo;
         std::vector<LPCWSTR> exportNames;
 
@@ -42,6 +67,12 @@ namespace FallbackLayer
 
         UINT cbvSrvUavHandleSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         UINT samplerHandleSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+        
+        ViewKey SRVViewsList[FallbackLayerNumDescriptorHeapSpacesPerView];
+        UINT SRVsUsed = 0;
+        ViewKey UAVViewsList[FallbackLayerNumDescriptorHeapSpacesPerView];
+        UINT UAVsUsed = 0;
+        
         for (UINT i = 0; i < numLibraries; i++)
         {
             auto &library = stateObjectCollection.m_dxilLibraries[i];
@@ -78,21 +109,28 @@ namespace FallbackLayer
                         CComPtr<ID3D12VersionedRootSignatureDeserializer> pDeserializer;
                         ShaderInfo shaderInfo;
                         shaderInfo.pRootSignatureDesc = GetDescFromRootSignature(pShaderAssociation->second.m_pRootSignature, pDeserializer);
-                        shaderInfo.SamplerDescriptorSizeInBytes = samplerHandleSize;
-                        shaderInfo.SrvCbvUavDescriptorSizeInBytes = cbvSrvUavHandleSize;
-                        shaderInfo.ShaderRecordIdentifierSizeInBytes = sizeof(ShaderIdentifier);
-                        shaderInfo.ExportName = exportName.c_str();
-                        shaderInfo.IsLib = true;
+                        shaderInfo.pSRVRegisterSpaceArray = SRVViewsList;
+                        shaderInfo.pNumSRVSpaces = &SRVsUsed;
+                        shaderInfo.pUAVRegisterSpaceArray = UAVViewsList;
+                        shaderInfo.pNumUAVSpaces = &UAVsUsed;
 
-                        CComPtr<IDxcBlob> pPatchedBlob;
-                        m_DxilShaderPatcher.PatchShaderBindingTables(
-                            (const BYTE *)outputLibInfo.pByteCode,
-                            (UINT)outputLibInfo.BytecodeLength,
-                            &shaderInfo, 
-                            &pPatchedBlob);
+                        if (GetNumParameters(*shaderInfo.pRootSignatureDesc) > 0)
+                        {
+                            shaderInfo.SamplerDescriptorSizeInBytes = samplerHandleSize;
+                            shaderInfo.SrvCbvUavDescriptorSizeInBytes = cbvSrvUavHandleSize;
+                            shaderInfo.ShaderRecordIdentifierSizeInBytes = sizeof(ShaderIdentifier);
+                            shaderInfo.ExportName = exportName.c_str();
 
-                        pOutputBlob = pPatchedBlob;
-                        outputLibInfo = DxilLibraryInfo(pOutputBlob->GetBufferPointer(), pOutputBlob->GetBufferSize());
+                            CComPtr<IDxcBlob> pPatchedBlob;
+                            m_DxilShaderPatcher.PatchShaderBindingTables(
+                                (const BYTE *)outputLibInfo.pByteCode,
+                                (UINT)outputLibInfo.BytecodeLength,
+                                &shaderInfo,
+                                &pPatchedBlob);
+
+                            pOutputBlob = pPatchedBlob;
+                            outputLibInfo = DxilLibraryInfo(pOutputBlob->GetBufferPointer(), pOutputBlob->GetBufferSize());
+                        }
                     }
                 }
                 patchedBlobList.push_back(pOutputBlob);
@@ -114,53 +152,55 @@ namespace FallbackLayer
             librariesInfo.emplace_back((void *)g_pStateMachineLib, ARRAYSIZE(g_pStateMachineLib));
         }
 
-        std::vector<FallbackLayer::StateIdentifier> stateIdentifiers;
-        CComPtr<IDxcBlob> pLinkedBlob;
-        m_DxilShaderPatcher.LinkShaders((UINT)stateObjectCollection.m_pipelineStackSize, librariesInfo, exportNames, stateIdentifiers, &pLinkedBlob);
+        // Link shaders just to get the stack sizes (very bad)
+        CComPtr<IDxcBlob> pCollectionBlob;
+        std::vector<DxcShaderInfo> shaderInfo;
+        m_DxilShaderPatcher.LinkCollection(stateObjectCollection.m_maxAttributeSizeInBytes, librariesInfo, exportNames, shaderInfo, &pCollectionBlob);
 
-        for (size_t i = 0; i < exportNames.size(); ++i)
+        UINT traceRayStackSize = shaderInfo[exportNames.size() - 1].StackSize;
+        for (size_t i = 0; i < exportNames.size() - 1; ++i)
         {
-            m_ExportNameToShaderIdentifier[exportNames[i]] = { stateIdentifiers[i], 0 };
+            auto &shader = shaderInfo[i];
+            bool isRaygen = shader.Type == ShaderType::Raygen;
+            UINT shaderStackSize = shader.StackSize;
+            if (isRaygen)
+            {
+                m_largestRayGenStackSize = std::max(shaderStackSize, m_largestRayGenStackSize);
+            }
+            else if (shader.Type == ShaderType::Miss)
+            {
+                shaderStackSize += traceRayStackSize;
+                m_largestNonRayGenStackSize = std::max(shaderStackSize, m_largestNonRayGenStackSize);
+            }
+
+            m_ExportNameToShaderData[exportNames[i]] = { {shader.Identifier, 0}, shaderStackSize };
         }
 
         for (auto &hitGroupMapEntry : stateObjectCollection.m_hitGroups)
         {
-            ShaderIdentifier shaderId = {};
             auto closestHitName = hitGroupMapEntry.second.ClosestHitShaderImport;
             auto anyHitName = hitGroupMapEntry.second.AnyHitShaderImport;
-            if (closestHitName)
-            {
-                auto closestHitIdentifier = m_ExportNameToShaderIdentifier.find(closestHitName);
-                if (closestHitIdentifier != m_ExportNameToShaderIdentifier.end())
-                {
-                    shaderId.StateId = closestHitIdentifier->second.StateId;
-                }
-                else
-                {
-                    ThrowFailure(E_INVALIDARG, L"Hit group is referring to a closesthit shader name that wasn't found in the state object");
-                }
-            }
-            if (anyHitName)
-            {
-                auto anyHitNameIdentifier = m_ExportNameToShaderIdentifier.find(anyHitName);
-                if (anyHitNameIdentifier != m_ExportNameToShaderIdentifier.end())
-                {
-                    shaderId.AnyHitId = anyHitNameIdentifier->second.StateId;
-                }
-                else
-                {
-                    ThrowFailure(E_INVALIDARG, L"Hit group is referring to an anyhit shader name that wasn't found in the state object");
-                }
-            }
+            auto intersectionName = hitGroupMapEntry.second.IntersectionShaderImport;
 
+            ShaderIdentifier shaderId = {};
+            shaderId.StateId = GetStateIdentfier(closestHitName);
+            shaderId.AnyHitId = GetStateIdentfier(anyHitName);
+            shaderId.IntersectionShaderId = GetStateIdentfier(intersectionName);
+            UINT shaderStackSize = (UINT)std::max(std::max(
+                GetShaderStackSize(closestHitName), GetShaderStackSize(anyHitName)), GetShaderStackSize(intersectionName));
+
+            m_largestNonRayGenStackSize = std::max(shaderStackSize + traceRayStackSize, m_largestNonRayGenStackSize);
             auto hitGroupName = hitGroupMapEntry.first;
-            m_ExportNameToShaderIdentifier[hitGroupName] = shaderId;
+            m_ExportNameToShaderData[hitGroupName] = { shaderId, shaderStackSize };
         }
+
+        UINT stackSize = stateObjectCollection.m_config.MaxTraceRecursionDepth * m_largestNonRayGenStackSize + m_largestRayGenStackSize;
+        CComPtr<IDxcBlob> pLinkedBlob;
+        m_DxilShaderPatcher.LinkStateObject(stateObjectCollection.m_maxAttributeSizeInBytes, stackSize, pCollectionBlob, exportNames, shaderInfo, &pLinkedBlob);
 
         CompilePSO(
             pDevice, 
             CD3DX12_SHADER_BYTECODE(pLinkedBlob->GetBufferPointer(), pLinkedBlob->GetBufferSize()), 
-            L"main", 
             stateObjectCollection, 
             &m_pRayTracePSO);
         
@@ -177,15 +217,15 @@ namespace FallbackLayer
 
     ShaderIdentifier *UberShaderRaytracingProgram::GetShaderIdentifier(LPCWSTR pExportName)
     {
-        auto &pEntry = m_ExportNameToShaderIdentifier.find(pExportName);
-        if (pEntry == m_ExportNameToShaderIdentifier.end())
+        auto pEntry = m_ExportNameToShaderData.find(pExportName);
+        if (pEntry == m_ExportNameToShaderData.end())
         {
             return nullptr;
         }
         else
         {
             // Handing out this pointer is safe because the map is read-only at this point
-            return &pEntry->second;
+            return &pEntry->second.stateIdentifier;
         }
     }
 

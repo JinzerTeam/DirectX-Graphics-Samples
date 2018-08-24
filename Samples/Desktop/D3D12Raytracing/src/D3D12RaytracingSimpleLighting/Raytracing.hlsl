@@ -9,6 +9,9 @@
 //
 //*********************************************************
 
+#ifndef RAYTRACING_HLSL
+#define RAYTRACING_HLSL
+
 #define HLSL
 #include "RaytracingHlslCompat.h"
 
@@ -53,7 +56,7 @@ uint3 Load3x16BitIndices(uint offsetBytes)
 }
 
 typedef BuiltInTriangleIntersectionAttributes MyAttributes;
-struct HitData
+struct RayPayload
 {
     float4 color;
 };
@@ -76,7 +79,7 @@ float3 HitAttribute(float3 vertexAttribute[3], BuiltInTriangleIntersectionAttrib
 inline void GenerateCameraRay(uint2 index, out float3 origin, out float3 direction)
 {
     float2 xy = index + 0.5f; // center in the middle of the pixel.
-    float2 screenPos = xy / DispatchRaysDimensions() * 2.0 - 1.0;
+    float2 screenPos = xy / DispatchRaysDimensions().xy * 2.0 - 1.0;
 
     // Invert Y for DirectX-style coordinates.
     screenPos.y = -screenPos.y;
@@ -86,18 +89,18 @@ inline void GenerateCameraRay(uint2 index, out float3 origin, out float3 directi
 
     world.xyz /= world.w;
     origin = g_sceneCB.cameraPosition.xyz;
-    direction = normalize(world - origin);
+    direction = normalize(world.xyz - origin);
 }
 
 // Diffuse lighting calculation.
 float4 CalculateDiffuseLighting(float3 hitPosition, float3 normal)
 {
-    float3 pixelToLight = normalize(g_sceneCB.lightPosition - hitPosition);
+    float3 pixelToLight = normalize(g_sceneCB.lightPosition.xyz - hitPosition);
 
     // Diffuse contribution.
     float fNDotL = max(0.0f, dot(pixelToLight, normal));
 
-    return g_cubeCB.diffuseColor * g_sceneCB.lightDiffuseColor * fNDotL;
+    return g_cubeCB.albedo * g_sceneCB.lightDiffuseColor * fNDotL;
 }
 
 [shader("raygeneration")]
@@ -118,15 +121,15 @@ void MyRaygenShader()
     // TMin should be kept small to prevent missing geometry at close contact areas.
     ray.TMin = 0.001;
     ray.TMax = 10000.0;
-    HitData payload = { float4(0, 0, 0, 0) };
+    RayPayload payload = { float4(0, 0, 0, 0) };
     TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
 
     // Write the raytraced color to the output texture.
-    RenderTarget[DispatchRaysIndex()] = payload.color;
+    RenderTarget[DispatchRaysIndex().xy] = payload.color;
 }
 
 [shader("closesthit")]
-void MyClosestHitShader(inout HitData payload : SV_RayPayload, in MyAttributes attr : SV_IntersectionAttributes)
+void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 {
     float3 hitPosition = HitWorldPosition();
 
@@ -158,8 +161,10 @@ void MyClosestHitShader(inout HitData payload : SV_RayPayload, in MyAttributes a
 }
 
 [shader("miss")]
-void MyMissShader(inout HitData payload : SV_RayPayload)
+void MyMissShader(inout RayPayload payload)
 {
     float4 background = float4(0.0f, 0.2f, 0.4f, 1.0f);
     payload.color = background;
 }
+
+#endif // RAYTRACING_HLSL

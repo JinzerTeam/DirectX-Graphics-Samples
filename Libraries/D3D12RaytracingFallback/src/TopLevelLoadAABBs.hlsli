@@ -64,6 +64,8 @@ void main(uint3 DTid : SV_DispatchThreadID)
         return;
     }
 
+    uint outputIndex = GetOutputIndex(instanceIndex);
+
     uint totalSizeOfAABBNodes = Constants.NumberOfElements * SizeOfAABBNode;
     const uint offsetToLeafNodeMetadata = totalSizeOfAABBNodes;
 
@@ -85,13 +87,14 @@ void main(uint3 DTid : SV_DispatchThreadID)
     AABB transformedBox = TransformAABB(box, ObjectToWorld);
 
     int leafFlag = IsLeafFlag | instanceIndex;
-    WriteBoxToBuffer(outputBVH, 0, instanceIndex, AABBtoBoundingBox(transformedBox), leafFlag);
+    WriteBoxToBuffer(outputBVH, 0, outputIndex, AABBtoBoundingBox(transformedBox), leafFlag);
     
     BVHMetadata metadata;
     metadata.instanceDesc = instanceDesc;
+    metadata.InstanceIndex = instanceIndex;
 
     metadata.ObjectToWorld[0] = ObjectToWorld[0];
     metadata.ObjectToWorld[1] = ObjectToWorld[1];
     metadata.ObjectToWorld[2] = ObjectToWorld[2];
-    StoreBVHMetadataToRawData(outputBVH, offsetToLeafNodeMetadata + instanceIndex * SizeOfBVHMetadata, metadata);
+    StoreBVHMetadataToRawData(outputBVH, offsetToLeafNodeMetadata + outputIndex * SizeOfBVHMetadata, metadata);
 }

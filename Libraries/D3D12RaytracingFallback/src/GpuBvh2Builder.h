@@ -31,7 +31,6 @@ namespace FallbackLayer
             _In_  D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE Flags);
 
         virtual void GetRaytracingAccelerationStructurePrebuildInfo(
-            _In_ ID3D12Device *pDevice,
             _In_  D3D12_GET_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO_DESC *pDesc,
             _Out_  D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO *pInfo);
 
@@ -52,17 +51,18 @@ namespace FallbackLayer
 
         struct ScratchMemoryPartitions
         {
-            UINT OffsetToSceneAABB;
-            UINT OffsetToElements;
-            UINT OffsetToMortonCodes;
-            UINT OffsetToIndexBuffer;
-            UINT OffsetToHierarchy;
+            UINT64 OffsetToSceneAABB;
+            UINT64 OffsetToElements;
+            UINT64 OffsetToMortonCodes;
+            UINT64 OffsetToIndexBuffer;
+            UINT64 OffsetToHierarchy;
+            UINT64 OffsetToBaseTreeletsCount;
 
-            UINT OffsetToSceneAABBScratchMemory;
+            UINT64 OffsetToSceneAABBScratchMemory;
 
-            UINT OffsetToCalculateAABBDispatchArgs;
-            UINT OffsetToPerNodeCounter;
-            UINT TotalSize;
+            UINT64 OffsetToCalculateAABBDispatchArgs;
+            UINT64 OffsetToPerNodeCounter;
+            UINT64 TotalSize;
         };
 
         ScratchMemoryPartitions CalculateScratchMemoryUsage(Level level, UINT numTriangles);
@@ -72,7 +72,7 @@ namespace FallbackLayer
         BitonicSort m_sorterPass;
         RearrangeElementsPass m_rearrangePass;
         LoadInstancesPass m_loadInstancesPass;
-        LoadTrianglesPass m_loadTrianglesPass;
+        LoadPrimitivesPass m_loadPrimitivesPass;
         ConstructAABBPass m_constructAABBPass;
         ConstructHierarchyPass m_constructHierarchyPass;
         TreeletReorder m_treeletReorder;
@@ -80,6 +80,31 @@ namespace FallbackLayer
         PostBuildInfoQuery m_postBuildInfoQuery;
         GpuBvh2Copy m_copyPass;
 
+        struct GpuBVHBuffers {
+            D3D12_GPU_VIRTUAL_ADDRESS scratchElementBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS outputElementBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS scratchMetadataBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS outputMetadataBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS sceneAABBScratchMemory;
+            D3D12_GPU_VIRTUAL_ADDRESS sceneAABB;
+            D3D12_GPU_VIRTUAL_ADDRESS mortonCodeBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS indexBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS outputSortCacheBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS hierarchyBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS nodeCountBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS baseTreeletsCountBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS baseTreeletsIndexBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS calculateAABBScratchBuffer;
+            D3D12_GPU_VIRTUAL_ADDRESS outputAABBParentBuffer;
+        };
+
+        void GpuBvh2Builder::LoadGpuBVHBuffers(
+            _In_  const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC *pDesc,
+            Level bvhLevel,
+            UINT numElements,
+            GpuBVHBuffers &buffers
+        );
+        
         void BuildTopLevelBVH(
             _In_  ID3D12GraphicsCommandList *pCommandList,
             _In_  const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC *pDesc,
@@ -90,5 +115,50 @@ namespace FallbackLayer
             _In_  ID3D12GraphicsCommandList *pCommandList,
             _In_  const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC *pDesc
         );
+
+        void GpuBvh2Builder::BuildBVH(
+            _In_  ID3D12GraphicsCommandList *pCommandList,
+            _In_  const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC *pDesc,
+            Level bvhLevel,
+            SceneType sceneType,
+            UINT numElements,
+            D3D12_GPU_DESCRIPTOR_HANDLE globalDescriptorHeap
+        );
+
+        void GpuBvh2Builder::LoadBVHElements(
+            _In_ ID3D12GraphicsCommandList *pCommandList,
+            _In_  const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC *pDesc,
+            const SceneType sceneType,
+            const uint totalElements,
+            D3D12_GPU_VIRTUAL_ADDRESS elementBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS metadataBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS indexBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS sceneAABBScratchMemory,
+            D3D12_GPU_VIRTUAL_ADDRESS sceneAABB,
+            D3D12_GPU_DESCRIPTOR_HANDLE globalDescriptorHeap
+        );
+
+        void GpuBvh2Builder::BuildBVHHierarchy(
+            _In_ ID3D12GraphicsCommandList *pCommandList,
+            _In_  const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC *pDesc,
+            const SceneType sceneType,
+            const uint numElements,
+            D3D12_GPU_VIRTUAL_ADDRESS scratchElementBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS outputElementBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS scratchMetadataBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS outputMetadataBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS sceneAABBScratchMemory,
+            D3D12_GPU_VIRTUAL_ADDRESS sceneAABB,
+            D3D12_GPU_VIRTUAL_ADDRESS mortonCodeBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS indexBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS outputSortCacheBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS hierarchyBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS nodeCountBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS baseTreeletsCountBuffer,
+            D3D12_GPU_VIRTUAL_ADDRESS baseTreeletsIndexBuffer,
+            D3D12_GPU_DESCRIPTOR_HANDLE globalDescriptorHeap
+        );
+
+        bool GpuBvh2Builder::SupportsTreeletReordering(Level level);
     };
 }

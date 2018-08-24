@@ -20,15 +20,17 @@ cbuffer Material : register(b3)
     uint MaterialID;
 }
 
-StructuredBuffer<RayTraceMeshInfo> g_meshInfo : register(t0, space1);
-ByteAddressBuffer g_indices : register(t1, space1);
-ByteAddressBuffer g_attributes : register(t2, space1);
-Texture2D<float> texShadow : register(t3, space1);
-Texture2D<float> texSSAO : register(t4, space1);
-Texture2D<float4> g_texDiffuse[27] : register(t5, space1);
-Texture2D<float4> g_texNormal[27] : register(t32, space1);
+StructuredBuffer<RayTraceMeshInfo> g_meshInfo : register(t1);
+ByteAddressBuffer g_indices : register(t2);
+ByteAddressBuffer g_attributes : register(t3);
+Texture2D<float> texShadow : register(t4);
+Texture2D<float> texSSAO : register(t5);
 SamplerState      g_s0;
 SamplerComparisonState shadowSampler : register(s1);
+
+Texture2D<float4> g_localTexture : register(t6);
+Texture2D<float4> g_localNormal : register(t7);
+
 
 uint3 Load3x16BitIndices(
     uint offsetBytes)
@@ -217,7 +219,7 @@ void CalculateUVDerivatives(float3 normal, float3 dpdu, float3 dpdv, float3 p, f
 }
 
 [shader("closesthit")]
-void Hit(inout RayPayload payload : SV_RayPayload, in BuiltInTriangleIntersectionAttributes attr : SV_IntersectionAttributes)
+void Hit(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
     payload.RayHitT = RayTCurrent();
     if (payload.SkipShading)
@@ -257,7 +259,7 @@ void Hit(inout RayPayload payload : SV_RayPayload, in BuiltInTriangleIntersectio
 
     float3 worldPosition = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
 
-    uint2 threadID = DispatchRaysIndex();
+    uint2 threadID = DispatchRaysIndex().xy;
     float3 ddxOrigin, ddxDir, ddyOrigin, ddyDir;
     GenerateCameraRay(uint2(threadID.x + 1, threadID.y), ddxOrigin, ddxDir);
     GenerateCameraRay(uint2(threadID.x, threadID.y + 1), ddyOrigin, ddyDir);
@@ -274,19 +276,19 @@ void Hit(inout RayPayload payload : SV_RayPayload, in BuiltInTriangleIntersectio
     const float3 viewDir = normalize(-WorldRayDirection());
     uint materialInstanceId = info.m_materialInstanceId;
 
-    const float3 diffuseColor = g_texDiffuse[NonUniformResourceIndex(materialInstanceId)].SampleGrad(g_s0, uv, ddx, ddy).rgb;
+    const float3 diffuseColor = g_localTexture.SampleGrad(g_s0, uv, ddx, ddy).rgb;
     float3 normal;
     float3 specularAlbedo = float3(0.56, 0.56, 0.56);
     float specularMask = 0;     // TODO: read the texture
     float gloss = 128.0;
     {
-        normal = g_texNormal[NonUniformResourceIndex(materialInstanceId)].SampleGrad(g_s0, uv, ddx, ddy).rgb * 2.0 - 1.0;
+        normal = g_localNormal.SampleGrad(g_s0, uv, ddx, ddy).rgb * 2.0 - 1.0;
         AntiAliasSpecular(normal, gloss);
         float3x3 tbn = float3x3(vsTangent, cross(vsNormal, vsTangent), vsNormal);
         normal = normalize(mul(normal, tbn));
     }
     
-    float3 outputColor = AmbientColor * diffuseColor * texSSAO[DispatchRaysIndex()];
+    float3 outputColor = AmbientColor * diffuseColor * texSSAO[DispatchRaysIndex().xy];
 
     float shadow = 1.0;
     if (UseShadowRays)
@@ -326,8 +328,8 @@ void Hit(inout RayPayload payload : SV_RayPayload, in BuiltInTriangleIntersectio
     // TODO: Should be passed in via material info
     if (IsReflection)
     {
-        outputColor = outputColor * 0.3 + g_screenOutput[DispatchRaysIndex()];
+        outputColor = outputColor * 0.3 + g_screenOutput[DispatchRaysIndex().xy];
     }
 
-    g_screenOutput[DispatchRaysIndex()] = float4(outputColor, 1);
+    g_screenOutput[DispatchRaysIndex().xy] = float4(outputColor, 1);
 }

@@ -48,7 +48,7 @@ public:
 private:
     CComPtr<ID3D12StateObjectPropertiesPrototype> m_pStateObjectInfo;
     CComPtr<ID3D12StateObjectPrototype> m_pStateObject;
-    COM_IMPLEMENTATION();
+    COM_IMPLEMENTATION_WITH_QUERYINTERFACE(m_pStateObject.p);
 };
 
 class NativeRaytracingCommandList : public ID3D12RaytracingFallbackCommandList
@@ -129,7 +129,7 @@ public:
 private:
     CComPtr<ID3D12GraphicsCommandList> m_pCommandList;
     CComPtr<ID3D12CommandListRaytracingPrototype> m_pRaytracingCommandList;
-    COM_IMPLEMENTATION();
+    COM_IMPLEMENTATION_WITH_QUERYINTERFACE(m_pRaytracingCommandList.p);
 };
 
 class NativeRaytracingDevice : public ID3D12RaytracingFallbackDevice
@@ -177,6 +177,11 @@ public:
         REFIID riid,
         _COM_Outptr_  void **ppStateObject)
     {
+        if (!ppStateObject || riid != __uuidof(ID3D12RaytracingFallbackStateObject))
+        {
+            ThrowFailure(E_INVALIDARG, L"Null ppStateObject passed in or invalid riid");
+        }
+
         CComPtr<ID3D12StateObjectPrototype> pStateObject;
         HRESULT hr = m_pRaytracingDevice->CreateStateObject(pDesc, IID_PPV_ARGS(&pStateObject));
 
@@ -242,5 +247,5 @@ public:
 private:
     CComPtr<ID3D12DeviceRaytracingPrototype> m_pRaytracingDevice;
     CComPtr<ID3D12Device> m_pDevice;
-    COM_IMPLEMENTATION();
+    COM_IMPLEMENTATION_WITH_QUERYINTERFACE(m_pDevice.p);
 };

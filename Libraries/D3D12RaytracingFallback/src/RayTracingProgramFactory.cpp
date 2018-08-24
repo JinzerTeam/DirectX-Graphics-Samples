@@ -43,7 +43,7 @@ namespace FallbackLayer
         ProgramTypes programType = DetermineBestProgram(stateObjectCollection);
         
         TraversalShader traversalShader;
-        m_spTraversalShaderBuilder->Compile(stateObjectCollection.IsUsingAnyHit, traversalShader);
+        m_spTraversalShaderBuilder->Compile(stateObjectCollection.IsUsingAnyHit || stateObjectCollection.IsUsingIntersection, traversalShader);
 
         memcpy((void *)&stateObjectCollection.m_traversalShader, &traversalShader.m_TraversalShaderDxilLib, sizeof(stateObjectCollection.m_traversalShader));
 
@@ -113,6 +113,12 @@ namespace FallbackLayer
         {
             IsUsingAnyHit = true;
         }
+
+        if (collection.IsUsingIntersection)
+        {
+            IsUsingIntersection = true;
+        }
+        m_maxAttributeSizeInBytes = (UINT)std::max(m_maxAttributeSizeInBytes, collection.m_maxAttributeSizeInBytes);
     }
 
 }

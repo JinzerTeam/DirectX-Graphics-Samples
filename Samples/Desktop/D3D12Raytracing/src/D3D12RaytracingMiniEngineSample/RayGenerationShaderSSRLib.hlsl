@@ -12,13 +12,13 @@
 #define HLSL
 #include "ModelViewerRaytracing.h"
 
-Texture2D<float>    depth    : register(t1);
-Texture2D<float3>   normals  : register(t2);
+Texture2D<float>    depth    : register(t12);
+Texture2D<float3>   normals  : register(t13);
 
 [shader("raygeneration")]
 void RayGen()
 {
-    uint2 DTid = DispatchRaysIndex();
+    uint2 DTid = DispatchRaysIndex().xy;
     float2 xy = DTid.xy + 0.5;
 
     // Screen position for the ray

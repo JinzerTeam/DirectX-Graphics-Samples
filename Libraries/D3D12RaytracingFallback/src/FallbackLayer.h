@@ -78,7 +78,7 @@ namespace FallbackLayer
         ID3D12DescriptorHeap *m_pBoundDescriptorHeaps[DescriptorHeapType::NumTypes] = {};
         ATL::CComPtr<ID3D12GraphicsCommandList> m_pCommandList;
         RaytracingDevice &m_device;
-        COM_IMPLEMENTATION();
+        COM_IMPLEMENTATION_WITH_QUERYINTERFACE(m_pCommandList.p);
     };
 
     class RaytracingStateObject : public ID3D12RaytracingFallbackStateObject
@@ -87,10 +87,7 @@ namespace FallbackLayer
         virtual ~RaytracingStateObject() {}
 
         virtual void *STDMETHODCALLTYPE GetShaderIdentifier(LPCWSTR pExportName);
-        virtual UINT64 STDMETHODCALLTYPE GetShaderStackSize(_In_  LPCWSTR pExportName)
-        {
-            return 0;
-        }
+        virtual UINT64 STDMETHODCALLTYPE GetShaderStackSize(_In_  LPCWSTR pExportName);
 
         virtual UINT64 STDMETHODCALLTYPE GetPipelineStackSize(void)
         {
@@ -119,7 +116,7 @@ namespace FallbackLayer
     class RaytracingDevice : public ID3D12RaytracingFallbackDevice
     {
     public:
-        RaytracingDevice(ID3D12Device *pDevice, UINT NodeMask);
+        RaytracingDevice(ID3D12Device *pDevice, UINT NodeMask, DWORD createRaytracingFallbackDeviceFlags);
         virtual ~RaytracingDevice() {}
 
         virtual bool UsingRaytracingDriver();
@@ -174,8 +171,12 @@ namespace FallbackLayer
             _Out_ ID3DBlob** ppBlob,
             _Always_(_Outptr_opt_result_maybenull_) ID3DBlob** ppErrorBlob);
 
+        bool AreShaderRecordRootDescriptorsEnabled()
+        {
+            return m_flags & CreateRaytracingFallbackDeviceFlags::EnableRootDescriptorsInShaderRecords;
+        }
+
     private:
-        void ThrowWarning(LPCWSTR errorMessage) {};
         void ProcessSubObject(const D3D12_STATE_SUBOBJECT &subObject, RaytracingStateObject &rayTracingStateObject);
         void ProcessShaderAssociation(const D3D12_STATE_SUBOBJECT &subObject, ShaderAssociations &shaderAssociations);
 
@@ -183,7 +184,9 @@ namespace FallbackLayer
         CComPtr<ID3D12Device> m_pDevice;
         AccelerationStructureBuilderFactory m_AccelerationStructureBuilderFactory;
         RaytracingProgramFactory m_RaytracingProgramFactory;
-        COM_IMPLEMENTATION();
+        DWORD m_flags;
+
+        COM_IMPLEMENTATION_WITH_QUERYINTERFACE(m_pDevice.p)
 
 #if ENABLE_ACCELERATION_STRUCTURE_VISUALIZATION
     public:
