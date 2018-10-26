@@ -318,7 +318,7 @@ void PixelBuffer::AssociateWithResource( ID3D12Device* Device, const std::wstrin
     m_pResource.Attach(Resource);
     m_UsageState = CurrentState;
 
-    m_Width = (uint32_t)ResourceDesc.Width;		// We don't care about large virtual textures yet
+    m_Width = (uint32_t)ResourceDesc.Width;        // We don't care about large virtual textures yet
     m_Height = ResourceDesc.Height;
     m_ArraySize = ResourceDesc.DepthOrArraySize;
     m_Format = ResourceDesc.Format;
@@ -356,7 +356,7 @@ D3D12_RESOURCE_DESC PixelBuffer::DescribeTex2D( uint32_t Width, uint32_t Height,
 void PixelBuffer::CreateTextureResource( ID3D12Device* Device, const std::wstring& Name,
     const D3D12_RESOURCE_DESC& ResourceDesc, D3D12_CLEAR_VALUE ClearValue, D3D12_GPU_VIRTUAL_ADDRESS /*VidMemPtr*/ )
 {
-    GpuResource::Destroy();
+    Destroy();
 
     CD3DX12_HEAP_PROPERTIES HeapProps(D3D12_HEAP_TYPE_DEFAULT);
     ASSERT_SUCCEEDED( Device->CreateCommittedResource( &HeapProps, D3D12_HEAP_FLAG_NONE,

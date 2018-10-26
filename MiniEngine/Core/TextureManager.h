@@ -41,6 +41,7 @@ public:
     virtual void Destroy() override
     {
         GpuResource::Destroy();
+        // This leaks descriptor handles.  We should really give it back to be reused.
         m_hCpuDescriptorHandle.ptr = 0;
     }
 
@@ -67,7 +68,7 @@ public:
     bool IsValid(void) const { return m_IsValid; }
 
 private:
-    std::wstring m_MapKey;		// For deleting from the map later
+    std::wstring m_MapKey;        // For deleting from the map later
     bool m_IsValid;
 };
 
